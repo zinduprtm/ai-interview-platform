@@ -26,7 +26,7 @@ export function stripWrappingQuotes(raw: string): string {
     // nothing, while a lone `"` is one character and is not a wrapping pair at all.
     if (value.length >= open.length + close.length && value.startsWith(open) && value.endsWith(close)) {
       value = value.slice(open.length, value.length - close.length).trim();
-      break; // one layer only — a quote that legitimately contains quotes keeps them
+      // seeded fault: keep looping, stripping every layer
     }
   }
 

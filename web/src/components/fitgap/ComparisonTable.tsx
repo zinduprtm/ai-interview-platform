@@ -199,7 +199,7 @@ export default function ComparisonTable({ comparisons }: { comparisons: SkillCom
                   <span className="break-words">{c.skill_label}</span>
                 </td>
                 <td data-label="Required" className={cn(CELL, "text-center max-sm:text-right")}>
-                  <LevelChip level={c.expected_level} />
+                  <LevelChip level={(c as any).required_level} />
                 </td>
                 <td data-label="Candidate" className={cn(CELL, "text-center max-sm:text-right")}>
                   <CandidateCell comparison={c} />
