@@ -6,7 +6,7 @@
 **Pull request:** https://github.com/rakamindev/ai-interview-platform/pull/116
 *(open, not merged — merging requires write access this fork does not have)*
 
-**Video walkthrough:** _<paste link before submitting>_
+**Video walkthrough:** https://youtu.be/ZpNXkTW_4Dc
 
 ---
 

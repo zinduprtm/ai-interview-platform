@@ -105,7 +105,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>Rakamin Ca
     <dt>Candidate</dt><dd>Zindu Pratama</dd>
     <dt>Submitted</dt><dd>7 September 2026</dd>
     <dt>Pull request</dt><dd>github.com/rakamindev/ai-interview-platform/pull/116<br><span style="color:#71717a">open, not merged</span></dd>
-    <dt>Video</dt><dd>__VIDEO_LINK__</dd>
+    <dt>Video</dt><dd>${process.env.VIDEO_LINK || '__PASTE_VIDEO_LINK_HERE__'}</dd>
     <dt>Result</dt><dd>13 findings documented, 11 fixed, 3 P0 closed &middot; 0 &rarr; 52 automated tests &middot; CI from nothing</dd>
   </dl>
 </div>
