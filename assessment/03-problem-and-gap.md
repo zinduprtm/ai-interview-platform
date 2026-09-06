@@ -91,13 +91,14 @@ anchored on **harm to the decision**, not on implementation difficulty.
 | **F3** | Confidence reaches the payload and is dropped by the comparison table | **P1** | Missing spec + defect | **seam** (api+web) |
 | **F4** | `medium` confidence is rendered as the word **"confirmed"** | **P1** | Defect | web |
 | **F5** | The same page calls one skill both "matched requirement" and "not required for this role" | **P1** | Defect | web |
-| **F6** | Portfolio/fit-gap records are reachable without a tenant check | **P1** | Defect | api |
+| **F6** | Portfolio records are reachable and writable without a tenant check | **P0** | Defect | api |
 | **F7** | LLM narrative failure is silent, and the fallback is shown under the wrong heading | **P2** | Defect + missing spec | api+web |
 | **F8** | Portfolio page is unusable at mobile width | **P2** | Defect | web |
 | **F9** | `not_assessed` is visually indistinguishable from absent data | **P2** | Missing spec | web |
 | **F10** | Evidence quotes render with doubled quotation marks | **P3** | Defect | web |
 | **F11** | Fallback narrative has a grammar defect (`1 gaps`) | **P3** | Defect | api |
 | **F12** | Setup documentation is stale; a fresh install cannot be logged into | **P3** | Defect + missing spec | repo |
+| **F13** | A vacancy with no skills kills the fit/gap job and leaves the UI polling forever | **P2** | Defect | api |
 
 ---
 
@@ -196,7 +197,7 @@ anchored on **harm to the decision**, not on implementation difficulty.
 - **Impact:** the report asserts two contradictory things about one skill on a
   single screen, which destroys the reader's warrant to trust either.
 
-### F6 — P1 — Portfolio records are reachable without a tenant check
+### F6 — P0 — Portfolio records are reachable and writable across tenants
 **Defective implementation · api**
 
 - **Ideal:** tenant isolation is the product's stated model — `TenantScoped`
@@ -208,13 +209,39 @@ anchored on **harm to the decision**, not on implementation difficulty.
   with no ownership check: `PortfolioSkill.joins(:portfolio).find(params[:id])`
   (`portfolio_skills_controller.rb:51`), and `Portfolio.find(params[:id])`
   (`portfolios_controller.rb:82, 104, 130, 156`).
-- **Status — not yet proven:** this is read from the source, **not** yet
-  demonstrated by a failing request spec. A request spec asserting that a token
-  from tenant B cannot override a portfolio skill owned by tenant A is the correct
-  evidence, and is listed as C5 in `ai-verification-log.md`. It is reported here
-  at P1 rather than P0 for that reason; if the spec confirms it, it is a P0.
-- **Impact:** an assessor authenticated for one organisation may be able to read
-  or alter another organisation's candidate ratings, quotes, and exports.
+- **Proven, then fixed.** This was first reported at P1 with the note that it had
+  only been read from source. A request spec now drives the real middleware stack
+  with a valid, correctly signed `admin` token belonging to a *different*
+  organisation than the records it touches. Against the original code:
+
+  ```
+  POST /api/v1/portfolio_skills/6/override        -> HTTP 201 Created
+       AssessorOverride persisted: override_level 5, overridden_by 99,
+       on a portfolio skill owned by another organisation
+
+  GET  /api/v1/portfolios/1/export?format=json    -> HTTP 200
+       body contained the candidate's name and their verbatim interview quotes
+  ```
+
+  Four of seven examples failed. With evidence it is a **P0**, and the initial
+  P1 was the right call only for as long as the claim was unverified — a claim is
+  worth what its evidence is worth.
+
+  One example passed from the start: the same portfolio reached through
+  `GET /api/v1/sessions/:id/portfolio` was already refused, because `Session`
+  includes `TenantScoped`. The mechanism works where it is applied; the defect is
+  that it is not applied to derived records.
+
+  **Fix:** ownership here is transitive — portfolio → session → tenant — so an
+  `in_tenant` scope expresses that and the controllers use it. A foreign id now
+  raises `RecordNotFound` and returns 404, which also declines to confirm the id
+  exists. Verified: 7 examples, 0 failures, and the owning tenant is not
+  over-blocked.
+- **Not closed by this fix — see CS-1.** Isolation for these six models is still
+  enforced by controller discipline rather than by the data layer. The next
+  controller to add a bare `.find` reopens the same hole.
+- **Impact:** an assessor authenticated for one organisation could read and alter
+  another organisation's candidate ratings, quotes and exports.
 
 ### F7 — P2 — Model failure is silent and the fallback is mislabelled
 **Defective implementation + missing specification · api + web**
@@ -245,6 +272,16 @@ anchored on **harm to the decision**, not on implementation difficulty.
   all. Screenshot `02-ui-before-portofolio(can't choose vacancy when mobile view).png`.
 - **Impact:** a hiring manager reviewing on a phone cannot read the evidence or
   reach the override control, which are the two things the screen exists for.
+- **Correction, recorded in `ai-verification-log.md` as VER-04.** The first
+  attempt at this fix changed Tailwind classes on two components and declared the
+  finding resolved on the strength of a green Vitest run. Those tests execute in
+  jsdom, which performs no layout and never evaluates a media query, so that
+  evidence said nothing about reflow. The actual cause was the application
+  shell — `AssessorLayout`'s non-wrapping flex header, inherited by every page —
+  which no component-level patch could have fixed. Acceptance is now a
+  measurement taken in a real browser: below the `sm` breakpoint every page
+  reports `documentElement.scrollWidth === clientWidth` with no element extending
+  past the viewport.
 
 ### F9 — P2 — Absence of evidence is presented as evidence of absence
 **Missing specification · web**
@@ -268,6 +305,24 @@ a rating looks malformed, which cheapens the most defensible part of the report.
 **Defective implementation · api** — `engine.rb:146` interpolates counts without
 pluralisation, yielding *"1 gaps"*. *Impact:* the artifact a recruiter may forward
 to a hiring manager reads as unfinished.
+
+### F13 — P2 — A vacancy with no skills kills the job and the UI waits forever
+**Defective implementation · api** *(found by a spec, not by reading)*
+
+- **Actual:** `Vacancy` validates only `role_title`, so a vacancy with zero
+  skills is legal. `FitGapReport` validated `skill_comparisons` with
+  `presence: true`, and Rails treats `[]` as blank — so `update!` raised
+  `ActiveRecord::RecordInvalid`, `FitGapGeneratorWorker` (`retry: 2`) exhausted
+  its retries, and the job died. The page polls a report that will never arrive
+  and shows "Generating fit/gap report…" indefinitely, with no error anywhere.
+- **Evidence:** an edge-case example written before any fix —
+  *"produces an empty comparison list for a vacancy with no skills"* — failed on
+  `Validation failed: Skill comparisons can't be blank` at `engine.rb:26`.
+- **Fixed:** the validation now requires a list and permits an empty one, and the
+  table renders an explicit empty state naming the cause ("This vacancy has no
+  required skills defined yet").
+- **Impact:** an assessor who runs fit/gap against a half-configured vacancy
+  waits on a spinner that will never resolve, with nothing telling them why.
 
 ### F12 — P3 — A fresh install cannot be logged into, and the docs are stale
 **Defective implementation + missing specification · repo**
@@ -355,6 +410,12 @@ single payload, and a single component, and they are the findings that sit close
 to the harm — a candidate rejected on a guess that was presented as a measurement.
 
 That is the change taken forward into Step 4, with F4, F5, F7, F10 and F11 fixed
-in passing because they live in the same two files. F6 and CS-1/CS-2 are reported
-and escalated rather than patched, for reasons argued in the Step 4 trade-off
-analysis.
+in passing because they live in the same two files.
+
+F6 was initially in that escalate-rather-patch category, and moving it was a
+deliberate change of mind: proving it with a request spec was cheap, and once
+proven, shipping a demonstrated P0 unfixed is a weaker position than closing the
+endpoints and escalating the class of bug. The narrow fix landed; CS-1 stands.
+
+CS-1 and CS-2 remain reported and escalated rather than patched, for reasons
+argued in the Step 4 trade-off analysis.

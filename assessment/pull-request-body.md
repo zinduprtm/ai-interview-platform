@@ -1,7 +1,8 @@
 ## The change in one line
 
 The fit/gap report is where this product throws away its own evidence. This
-restores it, and adds the test harness and CI needed to keep it.
+restores it, closes a proven cross-tenant data leak found on the way, and adds
+the test harness and CI the repository had none of.
 
 ---
 
@@ -61,6 +62,49 @@ only in that one interface. The column *label* stays "Required".
 
 ---
 
+## A P0 found and proven while writing the specs
+
+`TenantScoped` gives Assessment, Session and Vacancy a `default_scope` on
+`Current.tenant_id`. Portfolio, PortfolioSkill, AssessorOverride, TranscriptTurn,
+CoverageMap and FitGapReport have no `tenant_id` column and include none of it,
+so their isolation depends on every controller reaching them through a scoped
+parent. Two did not.
+
+A request spec drives the real middleware stack with a valid, correctly signed
+`admin` token belonging to a **different** organisation than the records it
+touches. Against the original code:
+
+```
+POST /api/v1/portfolio_skills/6/override        -> HTTP 201 Created
+     AssessorOverride persisted: override_level 5, overridden_by 99,
+     on a portfolio skill owned by another organisation
+
+GET  /api/v1/portfolios/1/export?format=json    -> HTTP 200
+     body contained the candidate's name and their verbatim interview quotes
+```
+
+Four of seven examples failed. `Portfolio.find(params[:id])` appeared in four
+places, and `PortfolioSkill.joins(:portfolio).find(params[:id])` — where the
+join constrained nothing at all and only made the query a join.
+
+One example passed from the first run: the same portfolio reached through
+`GET /api/v1/sessions/:id/portfolio` was already refused, because `Session` is
+tenant-scoped. **The mechanism works where it is applied.** That is what makes
+this a missing application of an existing pattern rather than a missing pattern.
+
+Ownership here is transitive — portfolio → session → tenant — so an `in_tenant`
+scope expresses exactly that and the controllers use it. A foreign id now raises
+`RecordNotFound` and returns 404, which also declines to confirm the id exists.
+
+**This was first reported at P1 and deliberately escalated to P0 only after the
+spec existed.** A claim is worth what its evidence is worth. It is also a change
+of mind worth stating plainly: the original plan was to escalate this rather than
+patch it, on the grounds that the remedy is architectural. Proving it was cheap,
+and once proven, shipping a demonstrated P0 unfixed is a weaker position than
+closing the endpoints and escalating the class of bug — which CS-1 still does.
+
+---
+
 ## What is in the change
 
 ### `api/`
@@ -109,6 +153,31 @@ only in that one interface. The column *label* stays "Required".
   phone the skill label wrapped to one or two words per line and the override
   control was pushed off-screen.
 
+### repo
+
+Following the setup documentation verbatim produced an application that rendered
+perfectly and failed every request — the most expensive kind of onboarding bug,
+because nothing announces itself as broken. I lost time to it before recognising
+it as a finding rather than my own mistake, and it is plausibly why the P0 above
+survived to `main`: the screen that decides a hire had no reproducible path to
+being looked at.
+
+- `web/.env.example` shipped `localhost:3000` for both the REST and WebSocket
+  URLs; the API serves on **3001**. The README instructs you to copy that file.
+- `web/README.md` stated the backend default as port 3000.
+- `api/README.md` step 7 said `cd ../ai-interview-web` — a directory that does
+  not exist. The frontend is `web/` in this same repository.
+- `db:seed` created an organisation and 22 taxonomy skills but **zero users**,
+  while login requires a persisted `admin`. A fresh clone could not be signed
+  into at all; the documented workaround was to mint a JWT by hand into
+  `VITE_DEV_TOKEN`, which bypasses the login screen rather than exercising it.
+  The seed now creates an assessor account — skipped in production, overridable
+  via `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`, idempotent.
+
+Verified end to end: the seeded credentials return a token from
+`POST /auth/login`, that token returns 200 from `GET /assessments`, and a wrong
+password returns 401.
+
 ---
 
 ## Migration safety
@@ -136,7 +205,7 @@ directory**, no test runner in `web/package.json`, and no CI.
 
 | | Before | After |
 |---|---|---|
-| `api/` | 0 specs (no `spec_helper`) | **20 examples** |
+| `api/` | 0 specs (no `spec_helper`) | **27 examples** (20 service + 7 request) |
 | `web/` | no runner | **25 tests** |
 | CI | none | both suites + typecheck + reversibility check |
 
@@ -183,7 +252,7 @@ strength — the more useful outcome. The missing example was added
 | Rejected | Reason |
 |---|---|
 | Fix the AI interviewer's probing behaviour (PRD-01) | Not verifiable without paid live sessions; the result is subjective and cannot be pinned by a test |
-| Patch the cross-tenant authorisation gap | Real and reported at P1, but the remedy is architectural, not local — see CS-1. Patching the controllers I found would hide the class of bug without removing it |
+| Enforce tenant isolation at the data layer | The endpoints I found are closed and covered by specs, but a `tenant_id` column on six tables, PostgreSQL RLS, or a mandatory scope in a base class is a design decision for the Technical Lead — see CS-1. The next bare `.find` reopens the same hole |
 | "Fix" `advance_stale_partials` | It silently redefines what "covered" means, which drives `confidence: high` and lets interviews end early. That is a product decision, not an engineering patch — see CS-2 |
 | Add runtime response validation (zod) across the API layer | The correct fix for the root cause, and too large to land safely tonight. Recommended as the follow-up, scoped in CS-4 |
 | Redesign the application | The brief asks for the change that makes the product genuinely better, not the one that touches the most lines |
