@@ -192,6 +192,45 @@ a failing test.
 
 ---
 
+### VER-05 — AI committed credential-shaped literals into CI, and a scanner caught them on the pull request
+
+- **Date / stage:** 2026-09-06, Step 5, on opening the pull request.
+- **What the AI generated:** the GitHub Actions workflow, including a Postgres
+  service with `POSTGRES_PASSWORD: postgres` and an application environment with
+  `SECRET_KEY_BASE: ci-secret-key-base-not-used-outside-ci` and
+  `DB_PASSWORD: postgres`.
+- **What happened:** GitGuardian's check on PR #116 failed —
+  *"1 secret uncovered"*, a Generic Password in `.github/workflows/ci.yml` at
+  commit `5ef60c4`.
+- **Was it a real secret?** No. Every value was a throwaway literal for a
+  container that exists for the length of one job and is destroyed with the
+  runner. Nothing needs rotating.
+- **Why it was still wrong.** A scanner cannot distinguish a throwaway password
+  from a live one, and neither can a reviewer skimming a diff. Writing values in
+  that shape trains everyone — humans and tooling — to expect and tolerate them,
+  which is exactly how a real credential eventually slips through unremarked.
+  The brief lists committing secrets among six non-negotiable disqualifiers, and
+  "it was only a test password" is not a defence anybody wants to be making.
+- **What I changed as a result:** removed the shape rather than suppressing the
+  alert. The Postgres service now uses `POSTGRES_HOST_AUTH_METHOD: trust`, which
+  is appropriate for a container reachable only from its own job network and
+  eliminates the password entirely. `SECRET_KEY_BASE` is generated per run with
+  `openssl rand -hex 64` written to `$GITHUB_ENV`, because the suite only needs
+  a key that is internally consistent for the length of the job — no two runs now
+  share one, and no literal is committed.
+- **What I deliberately did not do:** rewrite git history. GitGuardian offers it
+  as an option, and it is the wrong call here — the values were never live
+  credentials, so there is nothing to contain, and force-pushing an open pull
+  request destroys the review history for a cosmetic gain. Fixing forward and
+  stating why is the honest record.
+- **Transferable lesson:** this is the one case in this log where the mistake was
+  caught by tooling rather than by me, and the lesson is about what that tooling
+  is for. It did not find a leaked credential; it found a *habit* that produces
+  leaked credentials. Treating the alert as a false positive and clicking past it
+  would have kept the habit and lost the warning.
+
+---
+
 ## Open claims awaiting my verification
 
 These are assertions the AI made that I have **not yet confirmed myself**.
