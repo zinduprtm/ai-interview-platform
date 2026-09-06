@@ -24,6 +24,17 @@ describe("stripWrappingQuotes", () => {
     expect(stripWrappingQuotes('he said "no" and left')).toBe('he said "no" and left');
   });
 
+  it("strips only the outermost pair when two different pairs are nested", () => {
+    // Coverage gap found by a seeded fault test: removing the `break` from the
+    // stripping loop left every same-pair case identical, because the loop
+    // advances to a *different* pair rather than retrying the same one. Only a
+    // mixed nesting distinguishes "one layer" from "one layer per pair type",
+    // and nothing asserted it — so a real behaviour change passed unnoticed.
+    expect(stripWrappingQuotes('"\u201Cwe profiled it first\u201D"')).toBe(
+      "\u201Cwe profiled it first\u201D",
+    );
+  });
+
   it("recognises curly quotes", () => {
     expect(stripWrappingQuotes("“we profiled it first”")).toBe("we profiled it first");
   });
