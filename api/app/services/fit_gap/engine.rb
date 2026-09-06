@@ -68,6 +68,7 @@ module FitGap
           delta:           delta,
           confidence:      portfolio_skill&.dig(:confidence),
           ai_level:        portfolio_skill&.dig(:ai_level),
+          is_override:     portfolio_skill ? portfolio_skill[:overridden] : false,
           evidence_count:  portfolio_skill&.dig(:evidence_count).to_i
         }
       end
