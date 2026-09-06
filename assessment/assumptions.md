@@ -25,6 +25,21 @@ The email says *"Submit the case study to this email."* The brief says
 → **Assumption:** do both. The cost of a duplicate submission is zero; the cost of
 missing the intended channel is the whole assignment.
 
+**A12 — The role being assessed is named differently in the two documents I was given.**
+The invitation email refers to the *"Frontend/Backend Engineer Intern position"*,
+which is the role I applied for. The brief attached to that email is titled
+*"Case Study: Fullstack Product Engineer"*, and its section 1 is headed
+*"We Are Hiring a Product Engineer"* — a framing it then spends a page
+distinguishing from a conventional software engineer.
+→ **Assumption:** the brief governs, because it is the document that defines
+what is being assessed and it is unusually explicit about the distinction being
+deliberate. All written deliverables therefore say *Fullstack Product Engineer*.
+→ **Why it changed what I did:** this was not a labelling question. The brief's
+framing is what led me to spend the first hours on the wiki PRDs and on deciding
+*which* problem was worth solving, rather than on picking the largest technical
+change I could implement. A conventional engineer would have optimised for lines
+of code; the brief explicitly says the opposite is wanted.
+
 **A3 — Pull request target.**
 The brief asks for a PR on `github.com/rakamindev/ai-interview-platform`, a
 repository I do not have write access to.
