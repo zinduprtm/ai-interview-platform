@@ -17,27 +17,36 @@ const SECTIONS = [
 ];
 
 const SHOT_GROUPS = [
-  ['Before', [
-    ['01-ui-before-fitgap.png',
-     'The fit/gap report as shipped. The <b>Required</b> column is empty on all six rows, and no ✏ marker appears anywhere — despite a real assessor override on Communication and a legend that promises one.'],
-    ['02-ui-before-portofolio(can\'t choose vacancy when mobile view).png',
-     'The portfolio page at phone width. Content is squeezed into a narrow column beside empty space, body text wraps to one or two words per line, and the override control truncates to “Edit ov…”.'],
-    ['13-mobile-shell-before-header-fix.png',
-     'The application shell at phone width — the actual cause, found only after opening a real browser. Every page inherited it, so patching individual components could not have fixed it (VER-04).'],
+  ['The fit/gap report — the screen a hire is decided on', [
+    ['01-before-fitgap.png', 'before',
+     'One capture, five defects. The <b>Required</b> column is empty on all six rows, so the table cannot support the comparison it exists to make. The legend promises a ✏ for a human override, and none appears — although an assessor really had corrected Communication from L2 to L3. The narrative reads <i>“Candidate shows 3 skill matches, 1 exceeds, and 1 gaps”</i>: a rule-based fallback shown under a heading that claims a culture assessment, with a grammar defect. And the panel below announces Micro-frontend Architecture as <i>“not in vacancy requirements”</i> at level <b>2</b> — a bare integer where a level label belongs, about a skill the table above lists as a matched requirement.'],
+    ['10-after-fitgap-desktop.png', 'after',
+     'Required is populated. Communication carries <s>L2</s> → L3 with the ✏, so the assessor’s correction survives to the deciding screen. The new <b>Evidence</b> column separates two verdicts that previously rendered identically — React at <b>High · 3 quotes</b> against Micro-frontend at <b>Low · 1 quote</b>. Testing &amp; Quality Assurance reads “Never probed” on a dashed row rather than a bare dash, the summary counts it, and a note flags how many rows rest on low confidence.'],
+    ['14-after-degraded-banner.png', 'after',
+     'The same page, lower. A failed model call is announced instead of hidden, and the fallback appears under <i>“Rule-based Summary”</i> rather than masquerading as a culture assessment. The sentence is grammatical in every branch.'],
+    ['12-after-empty-state.png', 'after',
+     'A vacancy with no skills defined. This previously raised <code>RecordInvalid</code>, exhausted the worker’s retries, and left the UI polling a report that would never arrive — with no error anywhere. It now names the cause. The panel below also shows confidence rendered verbatim as “Medium confidence”, where the previous code printed “confirmed”.'],
   ]],
-  ['After', [
-    ['10-after-fitgap-desktop.png',
-     'Required is populated on every row. Communication shows <s>L2</s> → L3 with the ✏ marker, so the assessor’s correction is visible on the deciding screen. The new <b>Evidence</b> column separates the two “Match” verdicts that previously looked identical: React at <b>High · 3 quotes</b> against Micro-frontend at <b>Low · 1 quote</b>. Testing &amp; Quality Assurance reads “Never probed” on a dashed row rather than a bare dash, and the summary counts it explicitly.'],
-    ['14-after-degraded-banner.png',
-     'The same page, lower. A failed model call is now announced rather than hidden, and the fallback text appears under “Rule-based Summary” instead of masquerading as a culture assessment. The sentence is also grammatical — it previously read “1 gaps”.'],
-    ['11-after-fitgap-mobile.png',
+  ['Responsive — the same screens on a phone', [
+    ['02-ui-before-portofolio(can\'t choose vacancy when mobile view).png', 'before',
+     'The portfolio page at phone width. Content is squeezed into a narrow column beside empty space, body text wraps to one or two words per line, and the override control truncates to “Edit ov…”. The two things the screen exists for — reading the evidence and reaching the override — are both unreachable.'],
+    ['13-mobile-shell-before-header-fix.png', 'before',
+     'The application shell, which turned out to be the actual cause. A non-wrapping flex header whose contents exceed a phone viewport, inherited by every page — so no component-level patch could have fixed it. Found only after opening a real browser, not from the test suite (VER-04).'],
+    ['11-after-fitgap-mobile.png', 'after',
      'The comparison table below the <code>sm</code> breakpoint. Rows become labelled cards using the same <code>data-label</code> attributes the desktop table uses, so there is one DOM rather than a duplicated mobile tree.'],
-    ['12-after-empty-state.png',
-     'A vacancy with no skills defined. This previously raised <code>RecordInvalid</code>, exhausted the worker’s retries and left the UI polling a report that would never arrive. It now renders an empty state naming the cause. The panel below also shows confidence rendered verbatim — “Medium confidence”, where the old code printed “confirmed”.'],
   ]],
 ];
 
 const b64 = f => fs.readFileSync(path.join(SHOTS, f)).toString('base64');
+
+// Portrait phone captures and wide desktop captures need different treatment:
+// forcing a 432px-wide screenshot to full page width upscales it into a blurry
+// full-page block, while a 1440px desktop capture constrained to a column is
+// unreadable. Size by aspect ratio, read from the PNG header.
+function pngSize(file) {
+  const d = fs.readFileSync(path.join(SHOTS, file));
+  return { w: d.readUInt32BE(16), h: d.readUInt32BE(20) };
+}
 const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
 
 marked.setOptions({ mangle: false, headerIds: true });
@@ -54,10 +63,24 @@ SECTIONS.forEach(([file, title], i) => {
 let shots = '<section id="shots"><h1>Appendix D — Screenshots</h1>';
 SHOT_GROUPS.forEach(([group, items]) => {
   shots += `<h2>${group}</h2>`;
-  items.forEach(([f, cap]) => {
-    if (!fs.existsSync(path.join(SHOTS, f))) return;
-    shots += `<figure><img src="data:image/png;base64,${b64(f)}"><figcaption>${cap}</figcaption></figure>`;
-  });
+  const present = items.filter(([f]) => fs.existsSync(path.join(SHOTS, f)));
+
+  const fig = ([f, kind, cap], cls) =>
+    `<figure class="${cls}">`
+    + `<span class="tag ${kind}">${kind}</span>`
+    + `<img src="data:image/png;base64,${b64(f)}">`
+    + `<figcaption>${cap}</figcaption></figure>`;
+
+  // Phone captures are narrow; one per page wastes most of the page and makes
+  // them hard to compare. Laid out as a row they read the way phone screens
+  // actually get compared — side by side.
+  const tall = present.filter(([f]) => { const {w,h} = pngSize(f); return w / h < 1.0; });
+  const wide = present.filter(([f]) => { const {w,h} = pngSize(f); return w / h >= 1.0; });
+
+  wide.forEach(it => { shots += fig(it, 'wide'); });
+  if (tall.length) {
+    shots += `<div class="row">${tall.map(it => fig(it, 'tall')).join('')}</div>`;
+  }
 });
 shots += '</section>';
 toc += '<li><a href="#shots">Appendix D — Screenshots</a></li>';
@@ -82,9 +105,21 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>Rakamin Ca
                font-style:italic; page-break-inside:avoid; }
   section { page-break-before:always; }
   section:first-of-type { page-break-before:avoid; }
-  figure { margin:1.4em 0; page-break-inside:avoid; }
-  figure img { width:100%; border:1px solid #d4d4d8; border-radius:6px; }
-  figcaption { font-size:8.8pt; color:#52525b; margin-top:.5em; line-height:1.45; }
+  figure { margin:0 0 12mm; page-break-inside:avoid; text-align:center; }
+  figure img { border:1px solid #d4d4d8; border-radius:6px; display:block; margin:0 auto; }
+  figure.wide img { width:100%; max-height:140mm; object-fit:contain; }
+  figure.tall { flex:1 1 0; min-width:0; margin-bottom:0; }
+  figure.tall img { width:auto; max-width:100%; max-height:118mm; }
+  .row { display:flex; gap:7mm; align-items:flex-start; page-break-inside:avoid;
+         margin-bottom:10mm; }
+  .row figcaption { font-size:8pt; max-width:none; }
+  figcaption { font-size:8.6pt; color:#52525b; margin:.6em auto 0; line-height:1.5;
+               text-align:left; max-width:150mm; }
+  .tag { display:inline-block; font-size:7.6pt; font-weight:700; letter-spacing:.09em;
+         text-transform:uppercase; padding:.18em .6em; border-radius:3px; margin-bottom:.5em; }
+  .tag.before { color:#9f1239; background:#ffe4e6; }
+  .tag.after  { color:#065f46; background:#d1fae5; }
+  #shots h2 { margin-top:0; page-break-after:avoid; }
   .cover { page-break-after:always; padding-top:52mm; }
   .cover h1 { font-size:27pt; margin-bottom:.15em; }
   .cover .sub { font-size:13pt; color:#52525b; margin-bottom:2.6em; }
