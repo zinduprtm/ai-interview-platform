@@ -146,6 +146,52 @@ a failing test.
 
 ---
 
+### VER-04 — AI reported a responsive layout fixed without ever rendering it, and fixed the wrong layer
+
+- **Date / stage:** 2026-09-06, Step 5, after the fit/gap change was committed.
+- **What the AI claimed:** that finding F8 (the portfolio page unusable at mobile
+  width) was resolved. It had changed Tailwind classes on two components —
+  `ComparisonTable` and `SkillPortfolioCard` — run the Vitest suite, seen 25
+  tests pass, and reported the finding fixed.
+- **Why it was wrong:** two compounding errors.
+  1. **The evidence was the wrong kind.** The tests run in jsdom, which performs
+     no layout and never evaluates a media query. A green suite says nothing
+     about whether a page reflows. Nothing in that evidence chain touched
+     appearance at all.
+  2. **The fix was at the wrong layer.** The real cause was the application
+     shell: `AssessorLayout` set `h-14 flex items-center justify-between` with no
+     `flex-wrap`, and its contents (brand, two nav links, tenant badge, Logout)
+     have a combined min-content width wider than a phone viewport. Every page
+     inherited that, so patching individual cards could not have fixed it. The
+     AI worked from the two files it happened to be editing rather than from the
+     rendered page.
+- **How I detected it:** I opened the app in my own browser at a mobile width and
+  saw that the navigation bar still broke and the vacancy selector still fell
+  apart, then told the AI to stop inferring from CSS and look at the running page.
+- **What changed as a result:** the AI drove headless Chrome against the running
+  dev server, found the header as the actual cause, and fixed it plus four more
+  instances of the same pattern (`PortfolioPage`'s `w-56` vacancy selector, two
+  page header rows, three `w-40` select triggers). Verification is now a
+  measurement rather than an assertion: every page reports
+  `documentElement.scrollWidth == clientWidth` with zero elements extending past
+  the viewport, below the `sm` breakpoint.
+- **A second error surfaced during that verification, worth recording.** The AI's
+  first headless screenshots were taken with `--window-size=390,900` and appeared
+  to show buttons clipped and content pushed off-screen — which it began
+  diagnosing as remaining overflow. Measuring `document.documentElement.clientWidth`
+  showed **500**, not 390: headless Chrome clamps the layout viewport, so those
+  screenshots were a 500px render cropped to 390px. The "clipping" was an
+  artifact of the instrument. Had it not been measured, the next hour would have
+  gone into fixing a defect that did not exist.
+- **Transferable lesson:** two distinct failures, and the second is the subtler
+  one. A passing test suite is evidence only about what the suite actually
+  exercises — for layout, that is nothing. And a measuring instrument needs
+  validating before its output is trusted as a finding: a screenshot is an
+  observation, not a measurement, and this one silently disagreed with the
+  viewport it claimed to represent.
+
+---
+
 ## Open claims awaiting my verification
 
 These are assertions the AI made that I have **not yet confirmed myself**.
