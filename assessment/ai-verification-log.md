@@ -218,16 +218,47 @@ a failing test.
   `openssl rand -hex 64` written to `$GITHUB_ENV`, because the suite only needs
   a key that is internally consistent for the length of the job — no two runs now
   share one, and no literal is committed.
-- **What I deliberately did not do:** rewrite git history. GitGuardian offers it
-  as an option, and it is the wrong call here — the values were never live
-  credentials, so there is nothing to contain, and force-pushing an open pull
-  request destroys the review history for a cosmetic gain. Fixing forward and
-  stating why is the honest record.
-- **Transferable lesson:** this is the one case in this log where the mistake was
-  caught by tooling rather than by me, and the lesson is about what that tooling
-  is for. It did not find a leaked credential; it found a *habit* that produces
-  leaked credentials. Treating the alert as a false positive and clicking past it
-  would have kept the habit and lost the warning.
+- **A second AI error, in the remediation itself.** Having fixed the file, the AI
+  asserted that rewriting git history was the wrong call — the values were never
+  live, so there was nothing to contain, and force-pushing an open pull request
+  would cost review history for a cosmetic gain. That argument was coherent and
+  it was wrong, because it rested on an unchecked assumption about how the
+  scanner works.
+
+  Re-running the check proved it. The finding still pointed at commit `5ef60c4`,
+  unchanged, on a scan of 18 commits:
+
+  ```
+  1 secret were uncovered from the scan of 18 commits in your pull request.
+  GitGuardian id 23444290 · Generic Password · 5ef60c4 · .github/workflows/ci.yml
+  ```
+
+  **GitGuardian scans every commit in a pull request, not the final state of the
+  tree.** A literal committed once stays discoverable in that commit's blob for
+  as long as the commit exists, which is the entire point of secret scanning —
+  anyone who clones the branch can check out that commit. Fixing forward can
+  never clear such a finding, and would have left a red security check on a
+  submission that is graded in part on data safety.
+
+- **What I actually did:** rewrote history. `git filter-branch --tree-filter`
+  replaced `.github/workflows/ci.yml` with the hardened version in all ten
+  commits that carried it, the branch was force-pushed, and the literal now
+  appears in no commit reachable from the pull request. A backup ref
+  (`backup/pre-filter`) was created first. The cost the AI was worried about was
+  real but small here — the PR was minutes old with no review activity, and the
+  branch lives only on a fork.
+- **Transferable lesson:** two lessons, and the second matters more.
+
+  First, the tooling did not find a leaked credential; it found a *habit* that
+  produces leaked credentials. Treating the alert as a false positive and
+  clicking past it would have kept the habit and lost the warning.
+
+  Second — and this is the one I will carry — the AI reasoned confidently about
+  a tool's behaviour without checking it, produced a well-argued conclusion, and
+  was wrong. The tell was available: the finding named a commit hash, not a file
+  state, and nobody read that closely until the check failed a second time. When
+  an automated check disagrees with your model of it, the check is describing
+  reality and the model is a guess.
 
 ---
 
